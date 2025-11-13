@@ -5,12 +5,12 @@ from typing import Optional
 import math
 from tqdm import tqdm
 
-
 from .coefs import make_coefs_dict_from_list
 from .grad_desc import get_grad_indices
 
-# -------------------------- Set Transformer and helpers --------------------------
-class MultiHeadAttention(nn.Module):
+
+# -------------------------- Simple Self-Attention --------------------------
+class SelfAttention(nn.Module):
     def __init__(self, dim, num_heads=4, dropout=0.1):
         super().__init__()
         assert dim % num_heads == 0, "dim must be divisible by num_heads"
@@ -18,43 +18,25 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
 
-        self.q_lin = nn.Linear(dim, dim)
-        self.k_lin = nn.Linear(dim, dim)
-        self.v_lin = nn.Linear(dim, dim)
-        self.out_lin = nn.Linear(dim, dim)
+        self.qkv = nn.Linear(dim, dim * 3)
+        self.out = nn.Linear(dim, dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, q, k, v, mask: Optional[torch.Tensor] = None):
-        unsqueezed = False
-        if q.dim() == 2:
-            unsqueezed = True
-            q = q.unsqueeze(0)
-            k = k.unsqueeze(0)
-            v = v.unsqueeze(0)
-            if mask is not None:
-                mask = mask.unsqueeze(0)
+    def forward(self, x, mask: Optional[torch.Tensor] = None):
+        B, N, _ = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
 
-        B, Nq, _ = q.shape
-        Nk = k.shape[1]
-
-        q = self.q_lin(q).view(B, Nq, self.num_heads, self.head_dim).transpose(1, 2)
-        k = self.k_lin(k).view(B, Nk, self.num_heads, self.head_dim).transpose(1, 2)
-        v = self.v_lin(v).view(B, Nk, self.num_heads, self.head_dim).transpose(1, 2)
-
-        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
         if mask is not None:
-            if mask.dim() == 2:
-                mask = mask.unsqueeze(1).unsqueeze(1)
-            scores = scores.masked_fill(mask == 0, float('-inf'))
+            attn_scores = attn_scores.masked_fill(mask == 0, float('-inf'))
 
-        attn = torch.softmax(scores, dim=-1)
+        attn = torch.softmax(attn_scores, dim=-1)
         attn = self.dropout(attn)
-        out = torch.matmul(attn, v)
-        out = out.transpose(1, 2).contiguous().view(B, Nq, self.dim)
-        out = self.out_lin(out)
 
-        if unsqueezed:
-            out = out.squeeze(0)
+        out = torch.matmul(attn, v)
+        out = out.transpose(1, 2).reshape(B, N, self.dim)
+        out = self.out(out)
         return out
 
 
@@ -74,81 +56,18 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
-class LayerNorm(nn.Module):
-    def __init__(self, dim, eps=1e-6):
+class TransformerBlock(nn.Module):
+    def __init__(self, dim, num_heads=4, dropout=0.1):
         super().__init__()
-        self.ln = nn.LayerNorm(dim, eps=eps)
+        self.attn = SelfAttention(dim, num_heads=num_heads, dropout=dropout)
+        self.ff = FeedForward(dim, dropout=dropout)
+        self.ln1 = nn.LayerNorm(dim)
+        self.ln2 = nn.LayerNorm(dim)
 
     def forward(self, x):
-        return self.ln(x)
-
-
-class SAB(nn.Module):
-    def __init__(self, dim, num_heads=4, ln=True, dropout=0.1):
-        super().__init__()
-        self.mha = MultiHeadAttention(dim, num_heads=num_heads, dropout=dropout)
-        self.ff = FeedForward(dim, dropout=dropout)
-        self.ln1 = LayerNorm(dim) if ln else nn.Identity()
-        self.ln2 = LayerNorm(dim) if ln else nn.Identity()
-
-    def forward(self, X):
-        H = self.ln1(X + self.mha(X, X, X))
-        return self.ln2(H + self.ff(H))
-
-
-class ISAB(nn.Module):
-    def __init__(self, dim, num_heads=4, m=32, ln=True, dropout=0.1):
-        super().__init__()
-        self.m = m
-        self.inducing_points = nn.Parameter(torch.randn(1, m, dim))
-        self.mha1 = MultiHeadAttention(dim, num_heads=num_heads, dropout=dropout)
-        self.mha2 = MultiHeadAttention(dim, num_heads=num_heads, dropout=dropout)
-        self.ff = FeedForward(dim, dropout=dropout)
-        self.ln1 = LayerNorm(dim) if ln else nn.Identity()
-        self.ln2 = LayerNorm(dim) if ln else nn.Identity()
-
-    def forward(self, X):
-        unsqueezed = False
-        if X.dim() == 2:
-            X = X.unsqueeze(0)
-            unsqueezed = True
-
-        B = X.size(0)
-        I = self.inducing_points.expand(B, -1, -1)
-
-        H = self.mha1(I, X, X)
-        H = self.ln1(I + H)
-        H2 = self.mha2(X, H, H)
-        H2 = self.ln2(X + H2)
-        H2 = H2 + self.ff(H2)
-
-        if unsqueezed:
-            H2 = H2.squeeze(0)
-        return H2
-
-
-class PMA(nn.Module):
-    def __init__(self, dim, num_heads=4, k=1, ln=True, dropout=0.1):
-        super().__init__()
-        self.k = k
-        self.seed_vectors = nn.Parameter(torch.randn(1, k, dim))
-        self.mha = MultiHeadAttention(dim, num_heads=num_heads, dropout=dropout)
-        self.ln = LayerNorm(dim) if ln else nn.Identity()
-
-    def forward(self, X):
-        unsqueezed = False
-        if X.dim() == 2:
-            X = X.unsqueeze(0)
-            unsqueezed = True
-
-        B = X.size(0)
-        S = self.seed_vectors.expand(B, -1, -1)
-        H = self.mha(S, X, X)
-        H = self.ln(H + S)
-
-        if unsqueezed:
-            H = H.squeeze(0)
-        return H
+        x = self.ln1(x + self.attn(x))
+        x = self.ln2(x + self.ff(x))
+        return x
 
 
 class ResidualBlock(nn.Module):
@@ -165,61 +84,40 @@ class ResidualBlock(nn.Module):
         return self.activation(x + self.net(x))
 
 
-# -------------------------- Main model --------------------------
+# -------------------------- Main Model --------------------------
 class TaskToB(nn.Module):
     def __init__(
-            self,
-            input_dim,
-            dim = 128,
-            num_heads = 4,
-            num_inds = 32,
-            num_sab = 2,
-            emb_dim = 256,
-            u_dim = 256,
-            b_dim = 20000,
-            dropout = 0.1,
-            is_full = True,
-            M = 5,
-            N = 20,
-            n_coefs_folds = 100
-            ):
-        """
-        Args:
-            input_dim: dimensionality of per-element vector (features + target) i.e. d+1
-            dim: hidden dim inside Transformer blocks
-            num_heads: attention heads
-            num_inds: number of inducing points for ISAB
-            num_sab: number of stacked ISAB/SAB layers
-            emb_dim: final pooled task embedding dim
-            u_dim: dimension of intermediate vector u
-            b_dim: final size of b
-            dropout: dropout for all
-            is_full: if True, forward() will apply the operator and return (output, b);
-                     if False, forward() returns b only.
-            M: number of differentials
-            N: number of trees
-            n_coefs_folds: number of folds when finding the gradient of the operator
-        """
+        self,
+        input_dim,
+        dim=128,
+        num_heads=4,
+        num_layers=3,
+        emb_dim=256,
+        u_dim=256,
+        b_dim=20000,
+        dropout=0.1,
+        is_full=True,
+        M=5,
+        N=20,
+        n_coefs_folds=100
+    ):
         super().__init__()
 
         self.is_full = is_full
-
         self.M = M
         self.N = N
         self.n_coefs_folds = n_coefs_folds
 
         self.input_proj = nn.Linear(input_dim, dim)
 
-        # encoder: stack of ISAB blocks + a final SAB
-        enc_blocks = []
-        for i in range(num_sab):
-            enc_blocks.append(ISAB(dim=dim, num_heads=num_heads, m=num_inds, ln=True, dropout=dropout))
-        enc_blocks.append(SAB(dim=dim, num_heads=num_heads, ln=True, dropout=dropout))
-        self.encoder = nn.Sequential(*enc_blocks)
+        # self-attention блоки
+        blocks = [TransformerBlock(dim, num_heads=num_heads, dropout=dropout) for _ in range(num_layers)]
+        self.encoder = nn.Sequential(*blocks)
 
-        self.pma = PMA(dim=dim, num_heads=num_heads, k=1, ln=True, dropout=dropout)
+        # усреднение по токенам
+        self.pool = lambda x: x.mean(dim=1)
 
-        # task embedding head
+        # task embedding MLP
         self.task_mlp = nn.Sequential(
             nn.Linear(dim, emb_dim),
             nn.ReLU(inplace=True),
@@ -260,15 +158,11 @@ class TaskToB(nn.Module):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
-    def forward(self, X, y, operator=None, operator_args = None):
+    def forward(self, X, y, operator=None, operator_args=None):
         """
         X: (n, d)
         y: (n,)
-        operator: callable that accepts (coefs_dict, **operator_args) and returns scalar loss
-        operator_args: dict of additional arguments to pass to operator
-
-        Returns:
-            if self.is_full: (output_tensor, b) else: b
+        operator: callable(coefs_dict, operator_args) -> scalar
         """
         single_batch = False
         if X.dim() == 2:
@@ -277,7 +171,7 @@ class TaskToB(nn.Module):
             y = y.unsqueeze(0)
 
         B, n, d = X.shape
-        
+
         if y.dim() == 2 and y.shape[-1] != 1:
             y = y.unsqueeze(-1)
         elif y.dim() == 1:
@@ -287,15 +181,12 @@ class TaskToB(nn.Module):
         H = self.input_proj(XY)
 
         H = self.encoder(H)
-        P = self.pma(H)
-        P = P.view(B, -1)
+        P = self.pool(H)
 
         emb = self.task_mlp(P)
         u = self.u_net(emb)
 
         b = torch.matmul(u, self.W.t()) + self.b_bias.unsqueeze(0)
-
-        b = b / (b.norm(p=2, dim=-1, keepdim=True) + 1e-8)
 
         if single_batch:
             b = b.squeeze(0)
@@ -304,10 +195,13 @@ class TaskToB(nn.Module):
             if operator is None:
                 raise ValueError("operator must be provided when is_full=True")
             output = OperatorFunction.apply(b, operator, operator_args, self.M, self.N, get_grad_indices, self.n_coefs_folds)
+
+            b_norm = torch.norm(b, p=2)
+            output = torch.log1p(output) + b_norm
             return output, b
 
         return b
-    
+
 
 # -------------------------- Custom autograd wrapper --------------------------
 class OperatorFunction(torch.autograd.Function):

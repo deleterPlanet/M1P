@@ -174,18 +174,20 @@ def train_multi_task(model,
 
     start_epoch = 0
     if load_path:
-        start_epoch, start_task_name = load_checkpoint(model, optimizer, load_path)
-        if start_task_name == len(train_tasks)-1:
+        start_epoch, start_task_idx = load_checkpoint(model, optimizer, load_path)
+        if start_task_idx == len(train_tasks)-1:
             start_epoch += 1
-            start_task_name = 0
+            start_task_idx = 0
         else:
-            start_task_name += 1
+            start_task_idx += 1
 
     for epoch in range(start_epoch, start_epoch+epochs):
         print(f"\n===== EPOCH {epoch+1}/{start_epoch+epochs} =====")
         epoch_start = time.time()
 
         for task_idx, (name, X_np, y_np) in enumerate(loaded_tasks):
+            if epoch == start_epoch and task_idx < start_task_idx:
+                continue
             print(f"--- Training on {name} ---")
 
             # Create operator_args

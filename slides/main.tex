@@ -1,192 +1,290 @@
-\documentclass[10pt,pdf,hyperref={unicode}]{beamer}
-
-\mode<presentation>
-{
-\usetheme{boxes}
-\beamertemplatenavigationsymbolsempty
-
-\setbeamertemplate{footline}[page number]
-\setbeamersize{text margin left=0.5em, text margin right=0.5em}
-}
-
+\documentclass{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage{graphicx, hyperref, xcolor}
+\usepackage[warn]{mathtext}
+\usepackage[T2A]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[english, russian]{babel}
-\usepackage{bm}
-\usepackage{multirow}
-\usepackage{ragged2e}
+\usepackage[english,russian]{babel}
 \usepackage{indentfirst}
-\usepackage{multicol}
-\usepackage{subfig}
-\usepackage{amsmath,amssymb}
-\usepackage{enumerate}
-\usepackage{mathtools}
-\usepackage{comment}
-\usepackage{multicol}
-
-\usepackage[all]{xy}
-
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{mathrsfs}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{booktabs}
 \usepackage{tikz}
-\usetikzlibrary{positioning,arrows}
+\usetikzlibrary{arrows.meta, positioning}
+\usepackage{graphicx}
 
-\tikzstyle{name} = [parameters]
-\definecolor{name}{rgb}{0.5,0.5,0.5}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
 
-\usepackage{caption}
-\captionsetup{skip=0pt,belowskip=0pt}
+\title{Оптимизация ансамблей градиентного бустинга через адаптивное обучение агрегирующих функций}
+\author{Якушевич Антон Сергеевич}
+\institute{ВМК МГУ \\[1em] \textit{Научный руководитель}: д.ф.-м.н. Сенько Олег Валентинович}
+\date{2025}
 
-\newtheorem{rustheorem}{Теорема}
-\newtheorem{russtatement}{Утверждение}
-\newtheorem{rusdefinition}{Определение}
 
-% colors
-\definecolor{darkgreen}{rgb}{0.0, 0.2, 0.13}
-\definecolor{darkcyan}{rgb}{0.0, 0.55, 0.55}
-
-\AtBeginEnvironment{figure}{\setcounter{subfigure}{0}}
-
-\captionsetup[subfloat]{labelformat=empty}
-
-%----------------------------------------------------------------------------------------------------------
-
-\title[Пример слайдов по работе]{Пример слайдов по работе \\ курса}
-\author{И.\,О.\,Фамилия}
-
-\institute[]{Московский физико-технический институт}
-\date[2022]{\small 10\;февраля\;2022\,г.}
-
-%---------------------------------------------------------------------------------------------------------
 \begin{document}
 
-\begin{frame}
-\titlepage
+\frame{\titlepage}
+
+\begin{frame}{Актуальность}
+    \begin{itemize}
+        \item Градиентный бустинг — мощный метод в машинном обучении
+        \item Проблема: выбор агрегирующей функции
+        \item Цель: снизить количество деревьев в ансамбле, сохранив при этом качество модели
+    \end{itemize}
 \end{frame}
 
-%----------------------------------------------------------------------------------------------------------
-\section{Слайд об исследованиях}
-\begin{frame}{Слайд об исследованиях}
-\bigskip
-Исследуется проблема \ldots.
-\begin{block}{Цель исследования~---}
-предложить метод \ldots.
-\end{block}
-\begin{block}{Требуется предложить}
-\justifying
-\begin{enumerate}[1)]
-\item метод \ldots,
-\item метод \ldots,
-\item метод \ldots.
-\end{enumerate}
-\end{block}
-\begin{block}{Решение}
-Для \ldots.
-\end{block}
+% --------------------
+\begin{frame}{Постановка задачи}
+    Пусть задана последовательность функций $\{F_N\}_{N=1}^{+\infty}$, где $F_N: \mathbb{R}^N \to \mathbb{R}$. На $(N+1)$-ом шаге обучения вместо стандартной суммы $\sum_{i=1}^{N} T_i(x)$ будем использовать обобщённую функцию ансамбля $F_N\left(T_1(x), T_2(x), \dots, T_N(x)\right)$, где $\{T_i\}_{i=1}^N$ -- базовые модели (решающие деревья), обученные на предыдущих шагах.
+
+    \vspace{0.5cm}
+
+    \textbf{Дано:}
+
+    Выборка $X^\ell = \{(x_i, y_i)\}_{i=1}^\ell$, где $y_i \in \mathbb{R}$.
+    
+    \vspace{0.3cm}
+    
+    \textbf{Найти:}
+    
+    Последовательность агрегирующих функций $F_N$.
+    
+    \vspace{0.3cm}
+    
+    \textbf{Критерий:}
+    
+    Улучшение качества при фиксированном $N$ относительно функции потерь $\mathscr{L}$ ($RMSE$, $MAE$ и $R^2$), по сравнению с классическим градиентным бустингом, использующим сумму в качестве агрегирующей функции.
 \end{frame}
 
-%---------------------------------------------------------------------------------------------------------
-\section{Постановка задачи \ldots}
-\begin{frame}{Постановка задачи \ldots}
-Заданы
-\begin{enumerate}[1)]
-    \item признаки \ldots,
-    \item целевая переменная \ldots,
-    \item \ldots.
-\end{enumerate}
 
-\ldots
+% --------------------
+\begin{frame}{Параметризация агрегирующей функции}
+    Разложение в ряд Тейлора функции $F_N(T_1(x), T_2(x), \dots, T_N(x))$ будет выглядеть следующим образом:
+    \[
+        \sum_{k=0}^{+\infty} \Bigg[ \overbrace{\sum_{k_1=0}\sum_{k_2=0}\dots\sum_{k_N=0}}^{k_1 + k_2 + \dots + k_N = k} \frac{1}{k_1!k_2!\dots k_N!}\frac{\partial^k F_N(a_1, a_2, \dots, a_N)}{\partial T_1^{k_1} \partial T_2^{k_2} \dots \partial T_N^{k_N}} \prod_{i=1}^N (T_i(x)-a_i)^{k_i}\Bigg]
+    \]
 
-\bigskip
-
-Требуется выбрать модель \ldots из множества
-\[
-	\mathfrak{G} = \left\{\mathbf{g}| \mathbf{g}:\mathbb{R}^{n} \to \mathbb{Y}^\prime\right\}.
-\]
-Оптимизационная задача \ldots:
-\[
-	\mathbf{g} = \arg\min_{\mathbf{g} \in \mathfrak{G}} \mathcal{L}\bigr(\ldots\bigr),
-\]
-где $\mathcal{L}$~--- функция ошибки.
-
-\bigskip
-\footnotetext[1]{\textit{Lopez-Paz D., Bottou L., Scholkopf B., Vapnik V.} Unifying distillation and privileged information // ICLR, 2016.}
-\footnotetext[2]{\textit{Hinton G., Vinyals O., Dean J.} Distilling the knowledge in a neural network // NIPS, 2015.}
-\end{frame}
-
-%----------------------------------------------------------------------------------------------------------
-\section{Предложенный метод \ldots}
-\begin{frame}{Предложенный метод \ldots}
-~\\[-1mm]
-Заданы
-\begin{enumerate}[1)]
-	\item \ldots,
-	\item \ldots.
-\end{enumerate}
-
-\medskip
-Параметрические семейства:
-\[
-\setlength\abovedisplayskip{0pt}
-\mathfrak{F} = \left\{\mathbf{f}| \mathbf{f} = \text{softmax}\bigr(\mathbf{v}\bigr(\mathbf{x}\bigr)/T\bigr), \quad \mathbf{v}: \mathbb{R}^{n} \to \mathbb{R}^K \right\},
-\]
-\[
-\mathfrak{G} = \left\{\mathbf{g}| \mathbf{g} = \text{softmax}\bigr(\mathbf{z}\bigr(\mathbf{x}\bigr)/T\bigr), \quad \mathbf{z}: \mathbb{R}^n \to \mathbb{R}^K \right\},
-\]
-где~\ldots.
-
-\medskip
-Функция ошибки
-\[
-\setlength\abovedisplayskip{0pt}
-\begin{aligned}
-   \mathcal{L}\bigr(\mathbf{g}\bigr) = &-\sum_{i=1}^{m}\underbrace{{\sum_{k=1}^{K}y^k_i\log\mathbf{g}\bigr(\mathbf{x}_i\bigr)\bigr|_{T=1}}}_{\text{исходная функция потерь}}- \sum_{i=1}^{m}\underbrace{{\sum_{k=1}^{K}\mathbf{f}\bigr(\mathbf{x}_i\bigr)\bigr|_{T=T_0}\log\mathbf{g}\bigr(\mathbf{x}_i\bigr)\bigr|_{T=T_0}}}_{\text{слагаемое дистилляции}},
-\end{aligned}
-\setlength\belowdisplayskip{0pt}
-\]
-где~\ldots.
-
-Оптимальная модель выбирается из класса,
-$\hat{\mathbf{g}} = \arg\min\limits_{\mathbf{g} \in \mathfrak{G}_{\text{cl}}} \mathcal{L}\bigr(\mathbf{g}\bigr).$
-\end{frame}
-
-%----------------------------------------------------------------------------------------------------------
-\section{Анализ предложенного метода \ldots}
-\begin{frame}{Анализ предложенного метода \ldots}
-\justifying
-
-На графике показана зависимость значения параметров$w_i$ в зависимости от параметра~$l_1$-регуляризации~$C$.
-\begin{figure}[h!]
-\includegraphics[width=0.45\textwidth]{../figures/log_reg_cs_exp.eps}
-\includegraphics[width=0.45\textwidth]{../figures/log_reg_cs_exp.eps}
-\end{figure}
-
-С увеличением параметра регуляризации~$C$ число ненулевых параметров~$w_i$ уменьшается.
+    В качестве агрегирующей функции будем использовать усечённый ряд Тейлора:
+    \[
+        F_N(x) = \sum_{k=1}^{M} \overbrace{\sum_{k_1=0}\sum_{k_2=0}\dots\sum_{k_N=0}}^{k_1 + k_2 + \dots + k_N = k} b_{k_1, k_2, \dots, k_N} T_1^{k_1}(x) T_2^{k_2}(x) \dots T_N^{k_N}(x)
+    \]
 
 \end{frame}
 
-%----------------------------------------------------------------------------------------------------------
-\section{Выводы}
+% --------------------
+\begin{frame}{Стратегия обучения нового алгоритма}
+    \textbf{1. Нахождение точного корня:}
+    \[
+        F_{N+1}(x_i) = y_i \quad \Rightarrow \quad \sum_{k=0}^M C_k(x_i) \cdot (T_{N+1}(x_i))^k = y_i
+    \]
+
+    \textbf{2. Градиент:}
+    \[
+        T_{N+1}(x_i) = -\alpha \cdot C_1(x_i) \cdot \frac{\partial\mathscr{L}(y_i, F)}{\partial F} \Big|_{F = F_N(x_i)}
+    \]
+
+    \begin{itemize}
+        \item \footnotesize Learning rate: $\alpha = \frac{\delta}{N^\theta}$
+        \item $C_k(x)$ — функции, однозначно задаваемые $T_1(x), \dots, T_N(x)$
+    \end{itemize}
+\end{frame}
+
+% --------------------
+\begin{frame}{Оптимизация коэффициентов $b$}
+Для фиксированного датасета $\mathscr{D}$ вводится оператор $A_\mathscr{D} (b): \mathbb{R}^P \to \mathbb{R}$, который запускает кросс-валидацию: на каждом фолде обучает наш бустинг с заданными коэффициентами $b$ и возвращает среднюю ошибку по всем фолдам.
+
+Частные производные:
+\[
+\frac{\partial A_\mathscr{D}}{\partial b_i}\Bigg|_{b=b_0}  \approx \frac{A_\mathscr{D}(b_0 + \varepsilon \cdot e_i) - A_\mathscr{D}(b_0)}{\varepsilon}
+\]
+
+Градиентный спуск с моментом:
+\[
+\begin{cases}
+    v^{(k+1)} = \mu v^{(k)} - \eta \nabla_b A_\mathscr{D}(b^{(k)}) \\
+    b^{(k+1)} = b^{(k)} + v^{(k+1)}
+\end{cases}
+\]
+
+\end{frame}
+
+% --------------------
+\begin{frame}{Мета-модель}
+\begin{center}
+\scalebox{0.6}{
+    \begin{tikzpicture}[
+        node distance=1.5cm and 1cm,
+        layer/.style={rectangle, draw=black!50, fill=black!10, minimum width=2.2cm, minimum height=0.8cm, rounded corners=2pt, align=center},
+        input/.style={layer, fill=blue!10},
+        output/.style={layer, fill=green!10},
+        operator/.style={rectangle, draw=red!50, fill=red!10, minimum width=2.5cm, minimum height=1cm, rounded corners=2pt, align=center},
+        arrow/.style={-Stealth, thick}
+    ]
+    
+        % --- Первый ряд ---
+        \node[input] (input) {Вход \\ $\mathscr{D}$};
+        \node[layer, right=of input] (proj) {Input \\ projection};
+        \node[layer, right=of proj] (encoder) {Encoder \\ TransformerBlocks};
+        \node[layer, right=of encoder] (pma) {Pooling};
+        \node[layer, right=of pma] (mlp) {MLP \\ + Residuals};
+    
+        % --- Второй ряд ---
+        \node[output, below=1.8cm of mlp] (output) {Выход};
+        \node[operator, left=of output] (operator) {$A_{\mathscr{D}}(b)$};
+        \node[left=of operator] (loss) {(1) $\log(1 + \mathscr{L}) + \| b \|_2$};
+        \node[right=of output] (sec_out) {$b$ (2)}
+    
+        % --- Стрелки первого ряда ---
+        \draw[arrow] (input) -- (proj);
+        \draw[arrow] (proj) -- (encoder);
+        \draw[arrow] (encoder) -- (pma);
+        \draw[arrow] (pma) -- (mlp);
+    
+        % --- Переход вниз и второй ряд ---
+        \draw[arrow] (mlp.south) -- ++(0,-0.6) -| (output.north);
+        \draw[arrow] (output) -- (operator);
+        \draw[arrow] (output) -- (sec_out);
+        \draw[arrow] (operator) -- (loss);
+    
+        % --- Skip-connection сверху ---
+        \path (output) -- (operator) coordinate[midway] (mid1);
+        \path (operator) -- (loss) coordinate[midway] (mid2);
+        
+        \draw[arrow]
+            (mid1)
+                |- ([yshift=0.7cm]operator.north)
+                node[above] {$\| b \|_2$}
+                -| (mid2);
+    
+    \end{tikzpicture}
+}
+\end{center}
+
+Оптимизационная задача:
+$$
+\min_{\phi} \Big[ \log \Big(1 + A_{\mathscr{D}}(\Psi_{\phi}(\mathscr{D})) \Big) + \| \Psi_{\phi}(\mathscr{D}) \|_2 \Big]
+$$
+где $\Psi_{\phi}$ — нейронная сеть с параметрами $\phi$, формирующая вектор коэффициентов $b = \Psi_{\phi}(\mathscr{D})$, используемых при построении ансамбля
+
+\end{frame}
+
+% --------------------
+\begin{frame}{Модели для сравнения}
+    \begin{itemize}
+        \item \textbf{GB}: Стандартный градиентный бустинг (сумма деревьев).
+        \item \textbf{FGBReg} (Functional Gradient Boosting Regressor): Базовый вариант предлагаемой модели с следующей формулой агрегирующей функции:
+            \[
+                F_N(x) = \sum_{k=1}^{M} \sum_{k_1 + \dots + k_N = k} \frac{1}{k} \cdot T_1^{k_1}(x) \cdot T_2^{k_2}(x) \cdots T_N^{k_N}(x)
+            \]
+        \item \textbf{FGBReg + GD}: Оптимизация коэффициентов градиентным спуском.
+        \item \textbf{FGBReg + NN}: Оптимизация с помощью нейронной мета-модели.
+    \end{itemize}
+\end{frame}
+
+% --------------------
+\begin{frame}{Результаты}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+    \hline
+     Набор данных & GB              & FGBReg   & FGBReg + GD    & FGBReg + NN     \\
+    \hline
+    task1         & 93.69           & 95.72   & \textbf{86.78}  & 99.43           \\
+    task6         & 123.8           & 119.7   & \textbf{107.4}  & 132.8           \\
+    task7         & 8.424           & 8.380   & \textbf{8.366}  & 8.378           \\
+    \hline
+    task10        & 0.177           & 0.178   & 0.233           & \textbf{0.161}  \\
+    task16        & 41.03           & 33.54   & \textbf{32.05}  & 35.99           \\
+    task18        & \textbf{68.85}  & 77.60   & 74.45           & 81.50           \\
+    \hline
+    task41        & 0.401           & 0.364   & 0.356           & \textbf{0.345}  \\
+    task901       & \textbf{309.0}  & 361.7   & 367.1           & 655.7           \\
+    task970       & \textbf{40688}  & 46121   & 45923           & 51427           \\
+    \hline
+\end{tabular}
+\caption{$RMSE$}
+\label{tab:rmse_results}
+\end{table}
+    
+\end{frame}
+
+\begin{frame}{Результаты}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+    \hline
+     Набор данных & GB              & FGBReg           & FGBReg + GD    & FGBReg + NN     \\
+    \hline
+    task1         & 67.09           & 72.21           & \textbf{62.40}  & 79.40           \\
+    task6         & 78.33           & 89.09           & \textbf{76.50}  & 107.2           \\
+    task7         & 6.857           & 6.788           & \textbf{6.786}  & 6.816           \\
+    \hline
+    task10        & 0.165           & 0.166           & 0.222           & \textbf{0.151}  \\
+    task16        & 32.83           & 25.95           & \textbf{24.84}  & 28.70           \\
+    task18        & \textbf{51.55}  & 57.69           & 53.00           & 64.39           \\
+    \hline
+    task41        & 0.211           & \textbf{0.194}  & 0.197           & 0.202           \\
+    task901       & \textbf{189.1}  & 244.5           & 249.6           & 424.6           \\
+    task970       & \textbf{28994}  & 32799           & 32810           & 34680           \\
+    \hline
+\end{tabular}
+\caption{$MAE$}
+\label{tab:mae_results}
+\end{table}
+    
+\end{frame}
+
+\begin{frame}{Результаты}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+    \hline
+     Набор данных & GB              & FGBReg           & FGBReg + GD     & FGBReg + NN     \\
+    \hline
+    task1         & 0.704           & 0.711            & \textbf{0.755}  & 0.695           \\
+    task6         & 0.654           & 0.723            & \textbf{0.762}  & 0.661           \\
+    task7         & 0.319           & 0.335            & 0.336           & \textbf{0.340}  \\
+    \hline
+    task10        & -0.863          & 0.207            & -0.108          & \textbf{0.303}  \\
+    task16        & -11.28          & \textbf{-10.42}  & -11.61          & -13.33          \\
+    task18        & \textbf{0.681}  & 0.642            & 0.603           & 0.617           \\
+    \hline
+    task41        & -0.503          & -0.199           & -0.133          & \textbf{-0.057} \\
+    task901       & \textbf{0.919}  & 0.894            & 0.891           & 0.716           \\
+    task970       & \textbf{0.728}  & 0.695            & 0.694           & 0.634           \\
+    \hline
+\end{tabular}
+\caption{$R^2$}
+\label{tab:r2_results}
+\end{table}
+    
+\end{frame}
+
+% --------------------
 \begin{frame}{Выводы}
-\justifying
-	\begin{enumerate}
-	\justifying
-	    \item Предложен \ldots.
-        \item Доказаны теоремы \ldots, 
-        \begin{itemize}
-            \item[---] \ldots,
-            \item[---] \ldots.
-        \end{itemize}
-        \item Предложен метод \ldots
-        \begin{itemize}
-            \item[---] \ldots,
-            \item[---] \ldots.
-        \end{itemize}
-        \item Предложены методы \ldots
-        \begin{itemize}
-            \item[---] \ldots,
-            \item[---] \ldots.
-        \end{itemize}
-        \item Предложена вероятностная интерпретации \ldots.
-	\end{enumerate}
+\begin{itemize}
+    \item Заменили сумму на гибкую агрегирующую функцию.
+    \item Научились оптимизировать её коэффициенты.
+    \item При тех же 20 деревьях оптимизация (особенно GD) заметно снижает $RMSE$/$MAE$ и повышает $R^2$
+    \item Мета-сеть быстро генерирует хорошие коэффициенты для новых задач
+\end{itemize}
 \end{frame}
-%----------------------------------------------------------------------------------------------------------
 
-\end{document} 
+\begin{frame}[allowframebreaks]{Список литературы}
+\tiny
+\nocite{*}
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+\end{frame}
+
+
+\end{document}
